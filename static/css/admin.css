@@ -283,87 +283,15 @@ body { font-family: var(--font-b); background: var(--dark-bg); color: #e8e0d4; o
   .sidebar-nav { flex-direction: row; }
 }
 
-/* ── Stats bar ── */
-.stats-bar {
-  display: flex; gap: 12px; flex-wrap: wrap;
-  margin-bottom: 2rem;
+/* ── Spinner ── */
+.spinner {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 1.5px solid rgba(200,169,110,0.2);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
 }
-.stat-pill {
-  flex: 1; min-width: 120px;
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 16px 20px;
-  background: rgba(200,169,110,0.07);
-  border: 1px solid var(--border);
-  border-top: 2px solid var(--gold);
-}
-.stat-pill.sp-green { border-top-color: #8ecf9a; background: rgba(100,200,120,0.05); }
-.stat-pill.sp-amber { border-top-color: #e8c060; background: rgba(232,192,96,0.05); }
-.stat-pill.sp-dim   { border-top-color: rgba(200,169,110,0.3); }
-.sp-value {
-  font-family: var(--font-d);
-  font-size: 2rem; font-weight: 300;
-  color: var(--gold); line-height: 1;
-}
-.sp-green .sp-value { color: #8ecf9a; }
-.sp-amber .sp-value { color: #e8c060; }
-.sp-dim   .sp-value { color: rgba(200,169,110,0.5); }
-.sp-label {
-  font-size: 0.62rem; letter-spacing: 0.15em;
-  text-transform: uppercase; color: var(--muted);
-}
-
-/* ── Sidebar footer ── */
-.sidebar-footer {
-  display: flex; flex-direction: column;
-  gap: 8px; padding: 0 12px 8px;
-}
-.sidebar-back {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 16px;
-  font-family: var(--font-b); font-size: 0.75rem;
-  font-weight: 300; letter-spacing: 0.08em;
-  color: rgba(200,169,110,0.5);
-  border: 1px solid rgba(200,169,110,0.1);
-  transition: color 0.3s, border-color 0.3s;
-  text-decoration: none;
-}
-.sidebar-back:hover { color: var(--gold); border-color: rgba(200,169,110,0.3); }
-
-/* ── Table enhancements ── */
-.td-id    { color: var(--muted); font-size: 0.75rem; }
-.td-time  { white-space: nowrap; }
-.time-end { font-size: 0.72rem; color: var(--muted); }
-
-.contact-cell { display: flex; flex-direction: column; gap: 4px; }
-.cc-phone, .cc-email {
-  font-size: 0.78rem; text-decoration: none;
-  transition: color 0.3s;
-  display: flex; align-items: center; gap: 5px;
-}
-.cc-phone { color: var(--gold); }
-.cc-phone:hover { color: var(--gold-light); }
-.cc-email { color: var(--muted); font-size: 0.72rem; }
-.cc-email:hover { color: #c8bfb4; }
-
-.appt-notes {
-  font-size: 0.72rem; color: var(--muted);
-  margin-top: 4px; font-style: italic;
-  display: flex; align-items: flex-start; gap: 4px;
-}
-.appt-notes i { margin-top: 2px; font-size: 0.65rem; }
-
-.td-actions { white-space: nowrap; }
-.act-done { color: var(--muted); font-size: 0.72rem; }
-
-/* ── Pin hint ── */
-.pin-hint {
-  font-size: 0.65rem; letter-spacing: 0.18em;
-  text-transform: uppercase; color: rgba(200,169,110,0.3);
-}
-
-/* ── Auto-refresh note ── */
-.auto-refresh-note {
-  font-size: 0.65rem; letter-spacing: 0.1em;
-  color: rgba(255,255,255,0.18); margin-top: 0.5rem;
-  text-align: right;
-}
+@keyframes spin { to { transform: rotate(360deg); } }

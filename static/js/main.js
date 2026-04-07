@@ -186,7 +186,14 @@ async function fetchSlots() {
   }
 }
 
-serviceSelect?.addEventListener("change", fetchSlots);
+serviceSelect?.addEventListener("change", () => {
+  // Limpiar estado visual al cambiar servicio
+  slotsStatus.textContent = "";
+  slotsStatus.className   = "slots-status";
+  timeSelect.innerHTML    = '<option value="">Elegí servicio y fecha primero</option>';
+  timeSelect.disabled     = true;
+  fetchSlots();
+});
 dateInput?.addEventListener("change", fetchSlots);
 
 
@@ -198,6 +205,8 @@ if (apptForm) {
   apptForm.addEventListener("submit", async e => {
     e.preventDefault();
     const btn  = document.getElementById("apptSubmit");
+    if (btn.disabled) return;  // guard doble click
+
     const text = btn.querySelector(".btn-text");
     const load = btn.querySelector(".btn-loader");
 
@@ -235,10 +244,13 @@ if (apptForm) {
         timeSelect.disabled = true;
         timeSelect.innerHTML = '<option value="">Elegí servicio y fecha primero</option>';
         slotsStatus.textContent = "";
+      } else if (res.status === 409) {
+        setMsg(apptMsg, "Ese horario se acaba de ocupar. Buscando disponibilidad actualizada…", "error");
+        timeSelect.disabled = true;
+        timeSelect.innerHTML = '<option value="">Actualizando horarios…</option>';
+        await fetchSlots();
       } else {
         setMsg(apptMsg, data.error || "Ocurrió un error. Intentá de nuevo.", "error");
-        // Reload slots in case it was taken by someone else
-        fetchSlots();
       }
     } catch {
       setMsg(apptMsg, "Error de conexión. Intentá de nuevo o contactanos por teléfono.", "error");

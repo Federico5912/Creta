@@ -1,9 +1,13 @@
 from flask import Flask, request, jsonify, send_from_directory, session
 from flask_mail import Mail, Message as MailMessage
 from flask_migrate import Migrate
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 import os
 import re
+import logging
+from logging.handlers import RotatingFileHandler
 from datetime import date, time, datetime, timezone, timedelta
 
 load_dotenv()
@@ -13,7 +17,17 @@ from scheduling import get_available_slots, check_slot_available
 
 # ── App setup ──────────────────────────────────────────────
 app = Flask(__name__, static_folder="static", template_folder="templates")
-app.secret_key = os.getenv("SECRET_KEY", "dev-secret-change-in-production")
+app.secret_key    = os.getenv("SECRET_KEY", "dev-secret-change-in-production")
+app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SESSION_HOURS", 8)))
+
+# ── Logging a archivo ──────────────────────────────────────
+if not app.debug:
+    os.makedirs("logs", exist_ok=True)
+    handler = RotatingFileHandler("logs/creta.log", maxBytes=1_000_000, backupCount=5)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
+    app.logger.addHandler(handler)
+app.logger.setLevel(logging.INFO)
 
 # ── Database ───────────────────────────────────────────────
 app.config["SQLALCHEMY_DATABASE_URI"] = (
@@ -40,9 +54,45 @@ app.config.update(
 mail = Mail(app)
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", app.config["MAIL_USERNAME"])
 
-# ── Admin PIN ──────────────────────────────────────────────
-ADMIN_PIN       = os.getenv("ADMIN_PIN", "0000")
-ADMIN_ROUTE_KEY = os.getenv("ADMIN_ROUTE_KEY", "gestion")
+# ── Rate limiting ──────────────────────────────────────────
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://",
+)
+
+# ── Admin PIN + lockout ────────────────────────────────────
+ADMIN_PIN        = os.getenv("ADMIN_PIN", "0000")
+ADMIN_ROUTE_KEY  = os.getenv("ADMIN_ROUTE_KEY", "gestion")
+MAX_PIN_ATTEMPTS = 5
+PIN_LOCKOUT_MIN  = 15
+_pin_attempts: dict = {}   # ip → {"count": int, "locked_until": datetime|None}
+
+
+def _pin_check(ip: str, pin: str) -> tuple[bool, str]:
+    """Verifica PIN con lockout por IP. Retorna (ok, mensaje_error)."""
+    now  = datetime.now(timezone.utc)
+    data = _pin_attempts.get(ip, {"count": 0, "locked_until": None})
+
+    if data["locked_until"] and now < data["locked_until"]:
+        remaining = int((data["locked_until"] - now).total_seconds() / 60) + 1
+        return False, f"Demasiados intentos. Bloqueado por {remaining} minuto(s)."
+
+    if pin == ADMIN_PIN:
+        _pin_attempts.pop(ip, None)
+        return True, ""
+
+    data["count"] += 1
+    if data["count"] >= MAX_PIN_ATTEMPTS:
+        data["locked_until"] = now + timedelta(minutes=PIN_LOCKOUT_MIN)
+        data["count"]        = 0
+        _pin_attempts[ip]    = data
+        return False, f"Demasiados intentos. Acceso bloqueado por {PIN_LOCKOUT_MIN} minutos."
+
+    _pin_attempts[ip] = data
+    remaining = MAX_PIN_ATTEMPTS - data["count"]
+    return False, f"PIN incorrecto. {remaining} intento(s) restante(s)."
 
 
 # ── Validators ─────────────────────────────────────────────
@@ -128,6 +178,7 @@ def get_services():
     return jsonify({"services": [s.to_dict() for s in services]})
 
 @app.route("/api/availability")
+@limiter.limit("30 per minute")
 def availability():
     service_id = request.args.get("service_id", type=int)
     date_str   = request.args.get("date", "")
@@ -149,6 +200,7 @@ def availability():
     })
 
 @app.route("/api/appointment", methods=["POST"])
+@limiter.limit("10 per minute")
 def book_appointment():
     data = request.get_json(silent=True)
     if not data:
@@ -173,6 +225,10 @@ def book_appointment():
     except ValueError:
         return jsonify({"error": "Fecha inválida."}), 422
 
+    # Validación estricta de fecha pasada en backend
+    if appt_date < date.today():
+        return jsonify({"error": "No se pueden reservar turnos en fechas pasadas."}), 422
+
     ok, reason = check_slot_available(appt_date, str(data["time"]), service.duration_minutes)
     if not ok:
         return jsonify({"error": reason}), 409
@@ -195,6 +251,7 @@ def book_appointment():
     )
     db.session.add(appt)
     db.session.commit()
+    app.logger.info(f"Nuevo turno #{appt.id} — {appt.client_name} — {appt_date} {start}")
     send_appointment_emails(appt, action="new")
 
     return jsonify({
@@ -206,6 +263,7 @@ def book_appointment():
     }), 201
 
 @app.route("/api/contact", methods=["POST"])
+@limiter.limit("5 per minute")
 def contact():
     data = request.get_json(silent=True)
     if not data:
@@ -243,12 +301,18 @@ def admin_gate():
     return send_from_directory("templates", "admin.html")
 
 @app.route("/api/admin/login", methods=["POST"])
+@limiter.limit("10 per minute")
 def admin_login():
     data = request.get_json(silent=True) or {}
-    if data.get("pin") == ADMIN_PIN:
-        session["admin"] = True
+    ip   = get_remote_address()
+    ok, err = _pin_check(ip, str(data.get("pin", "")))
+    if ok:
+        session.permanent = True
+        session["admin"]  = True
+        app.logger.info(f"Admin login desde {ip}")
         return jsonify({"success": True})
-    return jsonify({"error": "PIN incorrecto."}), 401
+    app.logger.warning(f"PIN fallido desde {ip}: {err}")
+    return jsonify({"error": err}), 401
 
 @app.route("/api/admin/logout", methods=["POST"])
 def admin_logout():
@@ -270,17 +334,14 @@ def admin_required(f):
 @app.route("/api/admin/check-session")
 @admin_required
 def check_session():
-    """Verifica si la sesión admin sigue activa. Usado al cargar el panel."""
     return jsonify({"authenticated": True})
-
 
 @app.route("/api/admin/stats")
 @admin_required
 def admin_stats():
-    """Estadísticas rápidas para el header del panel."""
     today           = date.today()
-    pending_today   = Appointment.query.filter(Appointment.appt_date == today,   Appointment.status == AppointmentStatus.PENDING).count()
-    confirmed_today = Appointment.query.filter(Appointment.appt_date == today,   Appointment.status == AppointmentStatus.CONFIRMED).count()
+    pending_today   = Appointment.query.filter(Appointment.appt_date == today, Appointment.status == AppointmentStatus.PENDING).count()
+    confirmed_today = Appointment.query.filter(Appointment.appt_date == today, Appointment.status == AppointmentStatus.CONFIRMED).count()
     pending_all     = Appointment.query.filter(Appointment.status == AppointmentStatus.PENDING).count()
     total_today     = Appointment.query.filter(Appointment.appt_date == today).count()
     return jsonify({
@@ -290,18 +351,17 @@ def admin_stats():
         "pending_all":     pending_all,
     })
 
-
 @app.route("/api/admin/appointments")
 @admin_required
 def admin_appointments():
-    view      = request.args.get("view", "all")
-    date_str  = request.args.get("date", "")
-    status_f  = request.args.get("status", "")
-    query     = Appointment.query.order_by(Appointment.appt_date, Appointment.start_time)
+    view     = request.args.get("view", "all")
+    date_str = request.args.get("date", "")
+    status_f = request.args.get("status", "")
+    query    = Appointment.query.order_by(Appointment.appt_date, Appointment.start_time)
 
     if view == "day" and date_str:
         try:
-            d = date.fromisoformat(date_str)
+            d     = date.fromisoformat(date_str)
             query = query.filter(Appointment.appt_date == d)
         except ValueError:
             return jsonify({"error": "Fecha inválida."}), 400
@@ -310,10 +370,7 @@ def admin_appointments():
             d          = date.fromisoformat(date_str)
             week_start = d - timedelta(days=d.weekday())
             week_end   = week_start + timedelta(days=6)
-            query = query.filter(
-                Appointment.appt_date >= week_start,
-                Appointment.appt_date <= week_end,
-            )
+            query = query.filter(Appointment.appt_date >= week_start, Appointment.appt_date <= week_end)
         except ValueError:
             return jsonify({"error": "Fecha inválida."}), 400
 
@@ -336,6 +393,7 @@ def confirm_appointment(appt_id):
         return jsonify({"error": "No se puede confirmar un turno cancelado."}), 409
     appt.status = AppointmentStatus.CONFIRMED
     db.session.commit()
+    app.logger.info(f"Turno #{appt_id} confirmado")
     send_appointment_emails(appt, action="confirmed")
     return jsonify({"success": True, "appointment": appt.to_dict()})
 
@@ -347,6 +405,7 @@ def cancel_appointment(appt_id):
         return jsonify({"error": "Turno no encontrado."}), 404
     appt.status = AppointmentStatus.CANCELLED
     db.session.commit()
+    app.logger.info(f"Turno #{appt_id} cancelado")
     send_appointment_emails(appt, action="cancelled")
     return jsonify({"success": True, "appointment": appt.to_dict()})
 
@@ -387,6 +446,10 @@ def unblock_day(day_id):
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({"error": "Recurso no encontrado."}), 404
+
+@app.errorhandler(429)
+def too_many(e):
+    return jsonify({"error": "Demasiadas solicitudes. Esperá un momento."}), 429
 
 @app.errorhandler(500)
 def server_error(e):
