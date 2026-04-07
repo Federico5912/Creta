@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRETA · Panel de gestión</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Jost:wght@200;300;400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="/static/css/admin.css" />
+</head>
+<body>
+
+  <!-- ░░ PIN GATE ░░ -->
+  <div class="pin-gate" id="pinGate">
+    <div class="pin-box">
+      <p class="pin-logo">CRETA</p>
+      <p class="pin-sub">Panel de gestión</p>
+      <div class="pin-inputs">
+        <input type="password" maxlength="1" class="pin-digit" inputmode="numeric" pattern="[0-9]" autocomplete="off" />
+        <input type="password" maxlength="1" class="pin-digit" inputmode="numeric" pattern="[0-9]" autocomplete="off" />
+        <input type="password" maxlength="1" class="pin-digit" inputmode="numeric" pattern="[0-9]" autocomplete="off" />
+        <input type="password" maxlength="1" class="pin-digit" inputmode="numeric" pattern="[0-9]" autocomplete="off" />
+      </div>
+      <p class="pin-hint">Ingresá tu PIN de acceso</p>
+      <p class="pin-error" id="pinError"></p>
+    </div>
+  </div>
+
+  <!-- ░░ ADMIN PANEL ░░ -->
+  <div class="admin-wrap" id="adminWrap" hidden>
+
+    <aside class="sidebar">
+      <p class="sidebar-logo">CRETA</p>
+      <nav class="sidebar-nav">
+        <button class="snav-item active" data-view="today">
+          <i class="fas fa-calendar-day"></i> Hoy
+        </button>
+        <button class="snav-item" data-view="week">
+          <i class="fas fa-calendar-week"></i> Semana
+        </button>
+        <button class="snav-item" data-view="all">
+          <i class="fas fa-list"></i> Todos
+        </button>
+        <button class="snav-item" data-view="blocked">
+          <i class="fas fa-ban"></i> Días bloqueados
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="/" class="sidebar-back">
+          <i class="fas fa-arrow-left"></i> Ver sitio
+        </a>
+        <button class="sidebar-logout" id="logoutBtn">
+          <i class="fas fa-sign-out-alt"></i> Salir
+        </button>
+      </div>
+    </aside>
+
+    <main class="admin-main">
+
+      <!-- Stats bar -->
+      <div class="stats-bar" id="statsBar">
+        <div class="stat-pill">
+          <span class="sp-value" id="statPendingToday">—</span>
+          <span class="sp-label">Pendientes hoy</span>
+        </div>
+        <div class="stat-pill sp-green">
+          <span class="sp-value" id="statConfirmedToday">—</span>
+          <span class="sp-label">Confirmados hoy</span>
+        </div>
+        <div class="stat-pill sp-amber">
+          <span class="sp-value" id="statPendingAll">—</span>
+          <span class="sp-label">Pendientes totales</span>
+        </div>
+        <div class="stat-pill sp-dim">
+          <span class="sp-value" id="statTotalToday">—</span>
+          <span class="sp-label">Turnos hoy</span>
+        </div>
+      </div>
+
+      <!-- Header -->
+      <div class="admin-header">
+        <div>
+          <h1 class="admin-title" id="viewTitle">Turnos de hoy</h1>
+          <p class="admin-date" id="viewSubtitle"></p>
+        </div>
+        <div class="admin-controls">
+          <input type="date" id="filterDate" class="ctrl-date" />
+          <select id="filterStatus" class="ctrl-select">
+            <option value="">Todos los estados</option>
+            <option value="pending">Pendiente</option>
+            <option value="confirmed">Confirmado</option>
+            <option value="cancelled">Cancelado</option>
+          </select>
+          <button class="ctrl-btn" id="refreshBtn" title="Actualizar"><i class="fas fa-sync-alt"></i></button>
+        </div>
+      </div>
+
+      <!-- Appointments table -->
+      <div id="viewAppointments">
+        <div class="table-wrap">
+          <table class="appt-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Fecha</th>
+                <th>Horario</th>
+                <th>Servicio</th>
+                <th>Cliente</th>
+                <th>Contacto</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="apptTbody">
+              <tr><td colspan="8" class="loading-row">Cargando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-count" id="tableCount"></p>
+        <p class="auto-refresh-note" id="autoRefreshNote"></p>
+      </div>
+
+      <!-- Blocked days -->
+      <div id="viewBlocked" hidden>
+        <div class="blocked-header">
+          <h2 class="blocked-title">Días bloqueados</h2>
+          <button class="btn-gold" id="openBlockBtn"><i class="fas fa-plus"></i> Bloquear día</button>
+        </div>
+        <div class="block-form" id="blockForm" hidden>
+          <input type="date" id="blockDate" class="ctrl-date" />
+          <input type="text" id="blockReason" class="ctrl-input" placeholder="Motivo (opcional)" />
+          <button class="btn-gold" id="confirmBlockBtn">Confirmar</button>
+          <button class="btn-ghost-sm" id="cancelBlockBtn">Cancelar</button>
+        </div>
+        <div class="blocked-list" id="blockedList">
+          <p class="loading-row">Cargando…</p>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ░░ TOAST ░░ -->
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/js/admin.js"></script>
+</body>
+</html>

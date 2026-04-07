@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: creta_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: creta
+      POSTGRES_USER: creta_user
+      POSTGRES_PASSWORD: creta_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - creta_pgdata:/var/lib/postgresql/data
+
+volumes:
+  creta_pgdata:
