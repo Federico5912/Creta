@@ -848,3 +848,67 @@ body:has(button:hover) .cursor { width: 60px; height: 60px; opacity: 0.6; }
   .cursor, .cursor-dot { display: none; }
   body { cursor: auto; }
 }
+
+/* ══════════════════════════════════════════════
+   MOBILE — mejoras MVP
+   ══════════════════════════════════════════════ */
+
+/* Contact section stacks on mobile */
+@media (max-width: 900px) {
+  .contact { grid-template-columns: 1fr; }
+  .contact-cards { grid-template-columns: 1fr 1fr; }
+  .contact-form-wrap { padding: 32px 24px; }
+}
+@media (max-width: 500px) {
+  .contact-cards { grid-template-columns: 1fr; }
+}
+
+/* Appointment form on mobile */
+@media (max-width: 700px) {
+  .appt-form .form-row { grid-template-columns: 1fr; }
+  .appt-content { padding: var(--section-pad); }
+}
+
+/* Stats strip wraps */
+@media (max-width: 600px) {
+  .stats-strip { flex-direction: column; gap: 0; }
+  .stat { padding: 16px; width: 100%; }
+  .stat-divider { display: none; }
+}
+
+/* Hero mobile */
+@media (max-width: 600px) {
+  .hero-title { font-size: clamp(2.8rem, 12vw, 4rem); }
+  .hero-actions { flex-direction: column; align-items: flex-start; }
+  .hero-actions .btn-primary,
+  .hero-actions .btn-ghost { width: 100%; text-align: center; }
+  .hero-scroll { display: none; }
+}
+
+/* Services grid mobile */
+@media (max-width: 500px) {
+  .services-grid { grid-template-columns: 1fr; }
+}
+
+/* Nav mobile fixes */
+@media (max-width: 900px) {
+  .hero { padding: 120px 24px 80px; }
+}
+
+/* Form messages */
+.form-msg.success {
+  color: #8ecf9a;
+  background: rgba(100,200,120,0.08);
+  border-left: 2px solid #8ecf9a;
+  padding: 10px 14px;
+  margin-top: 4px;
+  font-size: 0.84rem;
+}
+.form-msg.error {
+  color: #e88888;
+  background: rgba(232,136,136,0.08);
+  border-left: 2px solid #e88888;
+  padding: 10px 14px;
+  margin-top: 4px;
+  font-size: 0.84rem;
+}

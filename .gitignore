@@ -1,20 +1,26 @@
-# Entornos virtuales
-venv/
-.venv/
-
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
 
-# Variables de entorno
+# Env
 .env
 
-# Archivos de sistema
+# Logs
+logs/
+*.log
+
+# DB
+*.db
+*.sqlite
+
+# OS
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-
-# VSCode
-.vscode/
+# Flask-Migrate (keep migrations/ but not __pycache__ inside)
+migrations/__pycache__/
+.pytest_cache__/

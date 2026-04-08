@@ -1,62 +1,62 @@
 /* ============================================================
    CRETA — admin.js
-   PIN gate · Appointment management · Blocked days
+   PIN · Stats · Hoy · Semana · Todos · Días bloqueados
    ============================================================ */
 "use strict";
 
-const pinGate   = document.getElementById("pinGate");
-const adminWrap = document.getElementById("adminWrap");
-const pinDigits = document.querySelectorAll(".pin-digit");
-const pinError  = document.getElementById("pinError");
-const toast     = document.getElementById("toast");
+// ── Globals ──────────────────────────────────────────────────
+let currentView      = "today";
+let autoRefreshTimer = null;
+let toastTimer       = null;
 
-let currentView = "today";
-let toastTimer  = null;
+// ── DOM refs ─────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const $$ = sel => document.querySelectorAll(sel);
+
+const pinGate   = $("pinGate");
+const adminWrap = $("adminWrap");
+const pinError  = $("pinError");
+const toast     = $("toast");
 
 
-// ── PIN Gate ─────────────────────────────────────────────────
-pinDigits.forEach((input, i) => {
-  input.addEventListener("input", () => {
-    input.value = input.value.replace(/\D/g, "").slice(0, 1);
-    if (input.value && i < pinDigits.length - 1) {
-      pinDigits[i + 1].focus();
-    }
-    if (Array.from(pinDigits).every(d => d.value.length === 1)) {
-      submitPin();
-    }
-  });
-  input.addEventListener("keydown", e => {
-    if (e.key === "Backspace" && !input.value && i > 0) {
-      pinDigits[i - 1].focus();
-    }
-  });
-});
+// ═══════════════════════════════════════════════════════════════
+// 1. PIN GATE
+// ═══════════════════════════════════════════════════════════════
+
+const pinDigits = $$(".pin-digit");
 pinDigits[0]?.focus();
 
+pinDigits.forEach((inp, i) => {
+  inp.addEventListener("input", () => {
+    inp.value = inp.value.replace(/\D/g, "").slice(0, 1);
+    if (inp.value && i < pinDigits.length - 1) pinDigits[i + 1].focus();
+    if ([...pinDigits].every(d => d.value.length === 1)) submitPin();
+  });
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Backspace" && !inp.value && i > 0) pinDigits[i - 1].focus();
+  });
+});
+
 async function submitPin() {
-  const pin = Array.from(pinDigits).map(d => d.value).join("");
+  const pin = [...pinDigits].map(d => d.value).join("");
   try {
     const res  = await fetch("/api/admin/login", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ pin }),
+      body: JSON.stringify({ pin }),
     });
     if (res.ok) {
-      pinGate.style.opacity = "0";
-      pinGate.style.transition = "opacity 0.4s";
-      setTimeout(() => { pinGate.hidden = true; }, 400);
-      adminWrap.hidden = false;
-      initPanel();
+      enterPanel();
     } else {
-      const data = await res.json().catch(() => ({}));
-      const msg  = data.error || "PIN incorrecto. Intentá de nuevo.";
+      const data     = await res.json().catch(() => ({}));
+      const msg      = data.error || "PIN incorrecto.";
+      const isLocked = msg.toLowerCase().includes("bloqueado");
       pinError.textContent = msg;
       pinDigits.forEach(d => { d.value = ""; d.style.borderColor = "rgba(232,136,136,0.6)"; });
-      const isLocked = msg.includes("bloqueado") || msg.includes("Bloqueado");
       setTimeout(() => {
-        pinDigits.forEach(d => { d.style.borderColor = ""; });
+        pinDigits.forEach(d => d.style.borderColor = "");
         if (!isLocked) pinError.textContent = "";
-      }, isLocked ? 8000 : 1400);
+      }, isLocked ? 10000 : 1600);
       if (!isLocked) pinDigits[0].focus();
     }
   } catch {
@@ -64,241 +64,374 @@ async function submitPin() {
   }
 }
 
+function enterPanel() {
+  pinGate.style.transition = "opacity 0.35s";
+  pinGate.style.opacity    = "0";
+  setTimeout(() => pinGate.hidden = true, 350);
+  adminWrap.hidden = false;
+  initPanel();
+}
 
-// ── Panel init ───────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════
+// 2. PANEL INIT — todo el setup va aquí
+// ═══════════════════════════════════════════════════════════════
+
 function initPanel() {
-  updateSubtitle();
-  loadView("today");
-  setupNavigation();
-  setupControls();
 
-  document.getElementById("logoutBtn").addEventListener("click", async () => {
+  // — Logout
+  $("logoutBtn")?.addEventListener("click", async () => {
     await fetch("/api/admin/logout", { method: "POST" });
     location.reload();
   });
-}
 
-
-// ── Navigation ───────────────────────────────────────────────
-function setupNavigation() {
-  document.querySelectorAll(".snav-item").forEach(btn => {
+  // — Navigation
+  $$(".snav-item").forEach(btn => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".snav-item").forEach(b => b.classList.remove("active"));
+      $$(".snav-item").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
-      const view = btn.dataset.view;
-      currentView = view;
-      loadView(view);
-      updateSubtitle();
+      currentView = btn.dataset.view;
+      switchView(currentView);
     });
   });
+
+  // — Filters
+  $("refreshBtn")?.addEventListener("click", () => {
+    switchView(currentView);
+    loadStats();
+  });
+  $("filterDate")?.addEventListener("change",   () => switchView(currentView));
+  $("filterStatus")?.addEventListener("change", () => switchView(currentView));
+
+  // — Blocked days buttons
+  $("openBlockBtn")?.addEventListener("click", () => {
+    const f = $("blockForm");
+    if (!f) return;
+    f.hidden = !f.hidden;
+    if (!f.hidden) {
+      $("blockDate").min = new Date().toISOString().split("T")[0];
+      $("blockDate").focus();
+    }
+  });
+
+  $("cancelBlockBtn")?.addEventListener("click", () => {
+    const f = $("blockForm");
+    if (f) f.hidden = true;
+  });
+
+  $("confirmBlockBtn")?.addEventListener("click", () => confirmBlockDay());
+
+  // — Initial load
+  loadStats();
+  switchView("today");
+  setSubtitle("today");
 }
 
-function updateSubtitle() {
-  const subtitle = document.getElementById("viewSubtitle");
-  const title    = document.getElementById("viewTitle");
-  const today    = new Date();
-  const fmt      = d => d.toLocaleDateString("es-UY", { weekday:"long", year:"numeric", month:"long", day:"numeric" });
 
-  const map = {
-    today:   ["Turnos de hoy",        fmt(today)],
-    week:    ["Turnos de la semana",  `Semana del ${fmt(today)}`],
-    all:     ["Todos los turnos",     ""],
-    blocked: ["Días bloqueados",      ""],
-  };
-  const [t, s] = map[currentView] || ["Turnos", ""];
-  title.textContent    = t;
-  subtitle.textContent = s;
-}
+// ═══════════════════════════════════════════════════════════════
+// 3. VIEW ROUTER
+// ═══════════════════════════════════════════════════════════════
 
+function switchView(view) {
+  currentView = view;
+  setSubtitle(view);
+  stopAutoRefresh();
 
-// ── Controls ─────────────────────────────────────────────────
-function setupControls() {
-  document.getElementById("refreshBtn").addEventListener("click", () => loadView(currentView));
-  document.getElementById("filterDate").addEventListener("change", () => loadView(currentView));
-  document.getElementById("filterStatus").addEventListener("change", () => loadView(currentView));
-}
+  const apptEl    = $("viewAppointments");
+  const blockedEl = $("viewBlocked");
 
-
-// ── Load view ────────────────────────────────────────────────
-function loadView(view) {
-  const apptSection    = document.getElementById("viewAppointments");
-  const blockedSection = document.getElementById("viewBlocked");
+  if (!apptEl || !blockedEl) {
+    console.error("CRETA: no se encontraron los divs de vista");
+    return;
+  }
 
   if (view === "blocked") {
-    apptSection.hidden    = true;
-    blockedSection.hidden = false;
+    apptEl.hidden    = true;
+    blockedEl.hidden = false;
     loadBlockedDays();
-    return;
+  } else {
+    apptEl.hidden    = false;
+    blockedEl.hidden = true;
+    loadAppointments(view);
+    if (view === "today") startAutoRefresh();
   }
+}
 
-  apptSection.hidden    = false;
-  blockedSection.hidden = true;
-  loadAppointments(view);
+function setSubtitle(view) {
+  const today = new Date();
+  const fmt   = d => d.toLocaleDateString("es-UY", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+  const titles = {
+    today:   ["Turnos de hoy",        fmt(today)],
+    week:    ["Turnos de la semana",  "Semana actual"],
+    all:     ["Todos los turnos",     "Historial completo"],
+    blocked: ["Días bloqueados",      "Gestión de disponibilidad"],
+  };
+  const [t, s] = titles[view] || ["Turnos", ""];
+  setEl("viewTitle",    t);
+  setEl("viewSubtitle", s);
 }
 
 
-// ── Appointments ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// 4. STATS
+// ═══════════════════════════════════════════════════════════════
+
+async function loadStats() {
+  try {
+    const res = await fetch("/api/admin/stats");
+    if (!res.ok) return;
+    const d = await res.json();
+    setEl("statPendingToday",   d.pending_today   ?? "—");
+    setEl("statConfirmedToday", d.confirmed_today ?? "—");
+    setEl("statPendingAll",     d.pending_all     ?? "—");
+    setEl("statTotalToday",     d.today           ?? "—");
+  } catch {/* silently ignore */}
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// 5. APPOINTMENTS — Hoy / Semana / Todos
+// ═══════════════════════════════════════════════════════════════
+
 async function loadAppointments(view) {
-  const tbody      = document.getElementById("apptTbody");
-  const statusFilter = document.getElementById("filterStatus")?.value || "";
-  const dateFilter   = document.getElementById("filterDate")?.value   || "";
+  const tbody  = $("apptTbody");
+  const count  = $("tableCount");
+  const today  = new Date().toISOString().split("T")[0];
+  const status = $("filterStatus")?.value || "";
+  const date   = $("filterDate")?.value   || "";
 
+  if (!tbody) return;
   tbody.innerHTML = `<tr><td colspan="8" class="loading-row"><span class="spinner"></span> Cargando…</td></tr>`;
+  if (count) count.textContent = "";
 
-  const today = new Date().toISOString().split("T")[0];
-  let url     = `/api/admin/appointments?`;
-
-  if (view === "today") {
-    url += `view=day&date=${dateFilter || today}`;
-  } else if (view === "week") {
-    url += `view=week&date=${dateFilter || today}`;
-  } else {
-    url += `view=all`;
-  }
-
-  if (statusFilter) url += `&status=${statusFilter}`;
+  // Build URL
+  let url = "/api/admin/appointments?";
+  if      (view === "today") url += `view=day&date=${date || today}`;
+  else if (view === "week")  url += `view=week&date=${date || today}`;
+  else                       url += "view=all";
+  if (status) url += `&status=${status}`;
 
   try {
-    const res  = await fetch(url);
+    const res = await fetch(url);
+    if (res.status === 401) { location.reload(); return; }
+    if (!res.ok) {
+      tbody.innerHTML = `<tr><td colspan="8" class="loading-row">Error del servidor (${res.status}).</td></tr>`;
+      return;
+    }
     const data = await res.json();
     renderAppointments(data.appointments || []);
-  } catch {
-    tbody.innerHTML = `<tr><td colspan="8" class="loading-row">Error al cargar.</td></tr>`;
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="loading-row">Error de red. Revisá la conexión.</td></tr>`;
   }
 }
 
-function renderAppointments(appointments) {
-  const tbody = document.getElementById("apptTbody");
-  const count = document.getElementById("tableCount");
+function renderAppointments(list) {
+  const tbody = $("apptTbody");
+  const count = $("tableCount");
+  if (!tbody) return;
 
-  count.textContent = `${appointments.length} turno${appointments.length !== 1 ? "s" : ""}`;
+  if (count) count.textContent = `${list.length} turno${list.length !== 1 ? "s" : ""}`;
 
-  if (appointments.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" class="loading-row">Sin turnos para mostrar.</td></tr>`;
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="loading-row">Sin turnos para este período.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = appointments.map(a => {
-    const badge   = { pending:"badge-pending", confirmed:"badge-confirmed", cancelled:"badge-cancelled" }[a.status];
-    const label   = { pending:"Pendiente", confirmed:"Confirmado", cancelled:"Cancelado" }[a.status];
-    const dateStr = new Date(a.date + "T00:00:00").toLocaleDateString("es-UY", { day:"2-digit", month:"2-digit", year:"numeric" });
+  tbody.innerHTML = list.map(a => {
+    const bc = { pending:"badge-pending", confirmed:"badge-confirmed", cancelled:"badge-cancelled" }[a.status] || "";
+    const bl = { pending:"Pendiente",     confirmed:"Confirmado",      cancelled:"Cancelado"      }[a.status] || a.status;
+    const ds = new Date(a.date + "T00:00:00").toLocaleDateString("es-UY", { day:"2-digit", month:"2-digit", year:"numeric" });
 
-    const actions = a.status === "pending"
-      ? `<button class="act-btn act-confirm" onclick="confirmAppt(${a.id})">Confirmar</button>
-         <button class="act-btn act-cancel"  onclick="cancelAppt(${a.id})">Cancelar</button>`
-      : a.status === "confirmed"
-      ? `<button class="act-btn act-cancel" onclick="cancelAppt(${a.id})">Cancelar</button>`
-      : `<span style="color:var(--muted);font-size:0.72rem">—</span>`;
+    const notes  = a.notes     ? `<div class="appt-notes"><i class="fas fa-sticky-note"></i> ${esc(a.notes)}</div>` : "";
+    const email  = a.client_email ? `<a href="mailto:${esc(a.client_email)}" class="cc-email"><i class="fas fa-envelope"></i> ${esc(a.client_email)}</a>` : "";
+
+    let actions = `<span class="act-done">—</span>`;
+    if (a.status === "pending") {
+      actions = `
+        <button class="act-btn act-confirm" onclick="confirmAppt(${a.id})"><i class="fas fa-check"></i> Confirmar</button>
+        <button class="act-btn act-cancel"  onclick="cancelAppt(${a.id})"><i class="fas fa-times"></i> Cancelar</button>`;
+    } else if (a.status === "confirmed") {
+      actions = `<button class="act-btn act-cancel" onclick="cancelAppt(${a.id})"><i class="fas fa-times"></i> Cancelar</button>`;
+    }
 
     return `<tr>
-      <td>${a.id}</td>
-      <td>${dateStr}</td>
-      <td>${a.start_time} – ${a.end_time}</td>
-      <td>${a.service}</td>
-      <td>${a.client_name}</td>
-      <td><a href="tel:${a.client_phone}" style="color:var(--gold)">${a.client_phone}</a></td>
-      <td><span class="badge ${badge}">${label}</span></td>
-      <td>${actions}</td>
+      <td class="td-id">${a.id}</td>
+      <td>${ds}</td>
+      <td class="td-time">${esc(a.start_time)}<span class="time-end"> → ${esc(a.end_time)}</span></td>
+      <td>${esc(a.service || "")}</td>
+      <td><div>${esc(a.client_name)}${notes}</div></td>
+      <td><div class="contact-cell">
+        <a href="tel:${esc(a.client_phone)}" class="cc-phone"><i class="fas fa-phone"></i> ${esc(a.client_phone)}</a>
+        ${email}
+      </div></td>
+      <td><span class="badge ${bc}">${bl}</span></td>
+      <td class="td-actions">${actions}</td>
     </tr>`;
   }).join("");
 }
 
 async function confirmAppt(id) {
   try {
-    const res = await fetch(`/api/admin/appointments/${id}/confirm`, { method: "POST" });
+    const res  = await fetch(`/api/admin/appointments/${id}/confirm`, { method: "POST" });
     const data = await res.json();
-    if (res.ok) { showToast("Turno confirmado. Emails enviados.", "success"); loadView(currentView); }
-    else         { showToast(data.error || "Error.", "error"); }
+    if (res.ok) {
+      showToast("✓ Turno confirmado. Emails enviados.", "success");
+      switchView(currentView);
+      loadStats();
+    } else {
+      showToast(data.error || "No se pudo confirmar.", "error");
+    }
   } catch { showToast("Error de conexión.", "error"); }
 }
 
 async function cancelAppt(id) {
-  if (!confirm("¿Confirmás la cancelación de este turno?")) return;
+  if (!confirm("¿Cancelar este turno?\nSe enviará un email al cliente avisando.")) return;
   try {
-    const res = await fetch(`/api/admin/appointments/${id}/cancel`, { method: "POST" });
+    const res  = await fetch(`/api/admin/appointments/${id}/cancel`, { method: "POST" });
     const data = await res.json();
-    if (res.ok) { showToast("Turno cancelado. Emails enviados.", "success"); loadView(currentView); }
-    else         { showToast(data.error || "Error.", "error"); }
+    if (res.ok) {
+      showToast("Turno cancelado. Emails enviados.", "success");
+      switchView(currentView);
+      loadStats();
+    } else {
+      showToast(data.error || "No se pudo cancelar.", "error");
+    }
   } catch { showToast("Error de conexión.", "error"); }
 }
 
 
-// ── Blocked days ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// 6. DÍAS BLOQUEADOS
+// ═══════════════════════════════════════════════════════════════
+
 async function loadBlockedDays() {
-  const list = document.getElementById("blockedList");
-  list.innerHTML = "<p class='loading-row'>Cargando…</p>";
+  const list = $("blockedList");
+  if (!list) return;
+  list.innerHTML = "<p class='loading-row'><span class='spinner'></span> Cargando…</p>";
+
   try {
-    const res  = await fetch("/api/admin/blocked-days");
+    const res = await fetch("/api/admin/blocked-days");
+    if (res.status === 401) { location.reload(); return; }
+    if (!res.ok) {
+      list.innerHTML = `<p class='loading-row'>Error del servidor (${res.status}).</p>`;
+      return;
+    }
     const data = await res.json();
     renderBlockedDays(data.blocked_days || []);
   } catch {
-    list.innerHTML = "<p class='loading-row'>Error al cargar.</p>";
+    list.innerHTML = "<p class='loading-row'>Error de red al cargar los días bloqueados.</p>";
   }
 }
 
 function renderBlockedDays(days) {
-  const list = document.getElementById("blockedList");
-  if (days.length === 0) {
-    list.innerHTML = "<p class='loading-row'>No hay días bloqueados.</p>";
+  const list = $("blockedList");
+  if (!list) return;
+
+  if (!days.length) {
+    list.innerHTML = "<p class='loading-row'>No hay días bloqueados actualmente.</p>";
     return;
   }
+
   list.innerHTML = days.map(d => {
-    const dateStr = new Date(d.date + "T00:00:00").toLocaleDateString("es-UY", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+    const ds = new Date(d.date + "T00:00:00").toLocaleDateString("es-UY", {
+      weekday:"long", day:"numeric", month:"long", year:"numeric"
+    });
     return `<div class="blocked-item">
       <div>
-        <p class="bi-date">${dateStr}</p>
-        ${d.reason ? `<p class="bi-reason">${d.reason}</p>` : ""}
+        <p class="bi-date">${ds}</p>
+        <p class="bi-reason">${d.reason ? esc(d.reason) : "Sin motivo especificado"}</p>
       </div>
-      <button class="bi-remove" onclick="unblockDay(${d.id})" title="Desbloquear"><i class="fas fa-times"></i></button>
+      <button class="bi-remove" onclick="unblockDay(${d.id})" title="Desbloquear este día">
+        <i class="fas fa-times"></i>
+      </button>
     </div>`;
   }).join("");
 }
 
-// Block / unblock UI
-document.getElementById("openBlockBtn")?.addEventListener("click", () => {
-  document.getElementById("blockForm").hidden = false;
-  document.getElementById("blockDate").min = new Date().toISOString().split("T")[0];
-});
-document.getElementById("cancelBlockBtn")?.addEventListener("click", () => {
-  document.getElementById("blockForm").hidden = true;
-});
-document.getElementById("confirmBlockBtn")?.addEventListener("click", async () => {
-  const date   = document.getElementById("blockDate").value;
-  const reason = document.getElementById("blockReason").value;
-  if (!date) { showToast("Seleccioná una fecha.", "error"); return; }
+async function confirmBlockDay() {
+  const dateVal = $("blockDate")?.value;
+  const reason  = $("blockReason")?.value?.trim() || "";
+  if (!dateVal) { showToast("Seleccioná una fecha.", "error"); return; }
+
   try {
     const res  = await fetch("/api/admin/blocked-days", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ date, reason }),
+      body: JSON.stringify({ date: dateVal, reason }),
     });
     const data = await res.json();
     if (res.ok) {
-      showToast("Día bloqueado.", "success");
-      document.getElementById("blockForm").hidden = true;
-      document.getElementById("blockDate").value  = "";
-      document.getElementById("blockReason").value = "";
+      showToast("Día bloqueado correctamente.", "success");
+      const f = $("blockForm");
+      if (f) f.hidden = true;
+      if ($("blockDate"))  $("blockDate").value  = "";
+      if ($("blockReason")) $("blockReason").value = "";
       loadBlockedDays();
     } else {
-      showToast(data.error || "Error.", "error");
+      showToast(data.error || "No se pudo bloquear el día.", "error");
     }
   } catch { showToast("Error de conexión.", "error"); }
-});
+}
 
 async function unblockDay(id) {
-  if (!confirm("¿Desbloquear este día?")) return;
+  if (!confirm("¿Quitar el bloqueo de este día?\nLos clientes podrán reservar nuevamente.")) return;
   try {
     const res = await fetch(`/api/admin/blocked-days/${id}`, { method: "DELETE" });
-    if (res.ok) { showToast("Día desbloqueado.", "success"); loadBlockedDays(); }
-    else         { showToast("Error.", "error"); }
+    if (res.ok) {
+      showToast("Día desbloqueado.", "success");
+      loadBlockedDays();
+    } else {
+      showToast("No se pudo desbloquear.", "error");
+    }
   } catch { showToast("Error de conexión.", "error"); }
 }
 
 
-// ── Toast ─────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// 7. AUTO-REFRESH
+// ═══════════════════════════════════════════════════════════════
+
+function startAutoRefresh() {
+  const note = $("autoRefreshNote");
+  let secs   = 60;
+  if (note) note.textContent = `Actualización automática en ${secs}s`;
+  autoRefreshTimer = setInterval(() => {
+    secs--;
+    if (note) note.textContent = `Actualización automática en ${secs}s`;
+    if (secs <= 0) {
+      loadAppointments("today");
+      loadStats();
+      secs = 60;
+    }
+  }, 1000);
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+  const note = $("autoRefreshNote");
+  if (note) note.textContent = "";
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// 8. HELPERS
+// ═══════════════════════════════════════════════════════════════
+
 function showToast(msg, type = "") {
+  if (!toast) return;
   toast.textContent = msg;
   toast.className   = "toast show" + (type ? " " + type : "");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.className = "toast"; }, 3200);
+  toastTimer = setTimeout(() => { toast.className = "toast"; }, 3500);
+}
+
+function setEl(id, val) {
+  const el = $(id);
+  if (el) el.textContent = val;
+}
+
+function esc(str) {
+  return String(str ?? "")
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 }
