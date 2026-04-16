@@ -1,3 +1,5 @@
+# Este sitio no es oficial y fue inspirado en una empresa real
+
 # CRETA
 
 Sitio web full-stack para **CRETA Estética Consciente**, con landing pública, solicitud de turnos, formulario de contacto y panel de administración para gestionar agenda, confirmaciones y días bloqueados.
